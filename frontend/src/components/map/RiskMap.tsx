@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { CircleMarker, MapContainer, Polygon, TileLayer, Tooltip } from 'react-leaflet';
 import type { LatLngBoundsExpression, LatLngTuple } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -28,10 +28,9 @@ function toLatLngBounds(bounds: { west: number; south: number; east: number; nor
 export function RiskMap({ region, risk, variant = 'compact' }: RiskMapProps) {
   const grid = useRiskGrid(risk?.gridUrl);
   const [selectedCell, setSelectedCell] = useState<RiskGridCell | null>(null);
+  const [filter, setFilter] = useState<'all' | RiskTier>('all');
   const aoiPath: LatLngTuple[] = region.geojson.coordinates[0].map(([lon, lat]) => [lat, lon]);
   const overlayBounds = risk?.bounds ? toLatLngBounds(risk.bounds) : null;
-  // Fit to the actual observation footprint when one exists — it's a small fraction of the
-  // full AOI, so fitting to the whole region would render the risk cells imperceptibly small.
   const mapBounds = overlayBounds ?? toLatLngBounds(region.bounds);
   const boundsOptions = overlayBounds ? { padding: [60, 60] as [number, number] } : undefined;
 
@@ -40,15 +39,35 @@ export function RiskMap({ region, risk, variant = 'compact' }: RiskMapProps) {
     counts[classifyRiskTier(cell.value)] += 1;
   });
 
+  const visibleCells = useMemo(
+    () => (grid?.cells ?? []).filter((cell) => filter === 'all' || classifyRiskTier(cell.value) === filter),
+    [filter, grid],
+  );
+
   return (
     <div className={styles.wrap} data-variant={variant} data-detail-open={selectedCell ? 'true' : 'false'}>
+      <div className={styles.filters} aria-label="Risk filters">
+        {(['all', ...TIERS] as const).map((tier) => (
+          <button
+            key={tier}
+            type="button"
+            className={styles.filterButton}
+            data-active={filter === tier}
+            onClick={() => setFilter(tier)}
+          >
+            {tier === 'all' ? 'All' : `${tierEmoji(tier)} ${tierLabel(tier)}`}
+            {tier !== 'all' ? ` (${counts[tier]})` : ''}
+          </button>
+        ))}
+      </div>
+
       <MapContainer bounds={mapBounds} boundsOptions={boundsOptions} scrollWheelZoom={variant === 'full'} className={styles.map}>
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           attribution="Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics"
         />
         <Polygon positions={aoiPath} pathOptions={{ color: '#38bdf8', weight: 1.5, fillOpacity: 0.02 }} />
-        {grid?.cells.map((cell) => {
+        {visibleCells.map((cell) => {
           const tier = classifyRiskTier(cell.value);
           const isSelected = selectedCell?.lat === cell.lat && selectedCell?.lon === cell.lon;
           return (
@@ -57,8 +76,6 @@ export function RiskMap({ region, risk, variant = 'compact' }: RiskMapProps) {
               center={[cell.lat, cell.lon]}
               radius={isSelected ? 11 : 9}
               pathOptions={{
-                // A neutral halo ring keeps a cell legible against the varied satellite
-                // basemap underneath, instead of relying on the fill hue alone.
                 color: isSelected ? tierColor(tier) : '#f8fafc',
                 weight: isSelected ? 2.5 : 1.25,
                 fillColor: tierColor(tier),
@@ -86,6 +103,13 @@ export function RiskMap({ region, risk, variant = 'compact' }: RiskMapProps) {
           </span>
         ))}
       </div>
+
+      {!grid || visibleCells.length === 0 ? (
+        <div className={styles.emptyOverlay}>
+          <strong>No spatial prediction available</strong>
+          <span>Run the prediction pipeline to generate the current risk grid.</span>
+        </div>
+      ) : null}
 
       {selectedCell && risk && (
         <GridCellDetail cell={selectedCell} risk={risk} onClose={() => setSelectedCell(null)} />

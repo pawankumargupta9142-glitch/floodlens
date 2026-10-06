@@ -7,6 +7,7 @@ import { useRegion } from './hooks/useRegion';
 import { useRiskHistory } from './hooks/useRiskHistory';
 import { AppLayout } from './layouts/AppLayout';
 import { AboutPage } from './pages/AboutPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { EventsPage } from './pages/EventsPage';
 import { HistoryPage } from './pages/HistoryPage';
@@ -39,6 +40,7 @@ function App() {
       )}
       {tab === 'events' && <EventsPage events={events} loading={eventsLoading} />}
       {tab === 'history' && <HistoryPage points={historyPoints} loading={historyLoading} />}
+      {tab === 'analytics' && <AnalyticsPage risk={risk} history={historyPoints} events={events} loading={historyLoading || riskLoading} />}
       {tab === 'about' && <AboutPage region={region} risk={risk} events={events} />}
     </AppLayout>
   );
